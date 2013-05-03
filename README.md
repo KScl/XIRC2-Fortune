@@ -3,7 +3,7 @@ XIRC2-Fortune
 
 Fortuna's source (badniknet/#fortune)
 
-You need the XIRC2 base (<STJrInuyasha/XIRC2>) to use this.
+You need the XIRC2 base (STJrInuyasha/XIRC2) to use this.
 
 Setup:
 * Place these files in \bots\fortune\.
