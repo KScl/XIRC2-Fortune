@@ -15,13 +15,13 @@ class fortuneLayout_randomized extends fortuneSettings {
 		$this->jackpotRound = random::range(1,3);
 
 		$this->messages = array(
-		'startfortune' => '%s joins the game!  That\'s all the contestants we need; let\'s play Randomized Fortunes!',
-		'welcome'      => 'Welcome to Randomized Fortunes!  %s',
+		'setup_gamestart'	=> '%s joins the game!  That\'s all the contestants we need; let\'s play Randomized Fortunes!',
+		'setup_welcome'		=> 'Welcome to Randomized Fortunes!  %s',
 
 		'introduce' => 'First thing\'s first, let\'s take a quick moment to introduce our player%s today.',
 
-		'tossup0'        => 'With introductions out of the way, we\'re going to do is do a Toss-up for control of the board in the first round.  No money at stake, however.',
-		'tossup_generic' => 'Well, everyone\'s gotten a chance to start first on a puzzle now, so it\'s time for a Toss-up!  This one will be worth $%s.',
+		'tossup_0'			=> 'With introductions out of the way, we\'re going to do is do a Toss-up for control of the board in the first round.  No money at stake, however.',
+		'tossup_generic'	=> 'Well, everyone\'s gotten a chance to start first on a puzzle now, so it\'s time for a Toss-up!  This one will be worth $%s.',
 
 		'round_fromtossup' => 'For winning the Toss-up, %s gets first chance at round %s, where the '.b().'JACKPOT'.r().' bonus awaits.',
 		 );
@@ -38,7 +38,7 @@ class fortuneLayout_randomized extends fortuneSettings {
 			case 10002: return array('endgame',  0);
 
 			default:
-				$roundvar = (($n+3)%4);
+				$roundvar = (($n-1)%($this->playerlimit+1));
 				if ($roundvar == 0)
 					return array('tossup', $tossupVal);
 				else {
@@ -56,33 +56,33 @@ class fortuneLayout_randomized extends fortuneSettings {
 		$wildCarded = false;
 		$doublePlayed = false;
 
-		$wheel->spaces[0] = fortuneSpace::createSpecialWedge("bankrupt");
-		if (($round % 3) == 1)
-			$wheel->spaces[1300] = fortuneSpace::createSpecialWedge("jackpot");
+		$wheel->spaces[0] = new fortuneBankruptWedge();
+		if (!($round-1 % $this->playerlimit))
+			$wheel->spaces[1300] = new fortuneJackpotWedge();
 
 		for ($i = 100; $i < 2400; $i += 100) {
 			if (in_array($i, array(400, 1300, 1600, 2100))) continue;
 			if (isset($wheel->spaces[$i])) continue;
-			$type = random::range(-21, 6);
+			$type = random::range(-20, 7);
 			switch ($type) {
 				case 0: case 1:
-					$wheel->spaces[$i] = fortuneSpace::createSpecialWedge("prize");
+					$wheel->spaces[$i] = new fortunePrizeWedge();
 					break;
 				case 3:
 					if ($wildCarded) break;
 					$wildCarded = true;
-					$wheel->spaces[$i] = fortuneSpace::createSpecialWedge("wildCard");
+					$wheel->spaces[$i] = new fortuneWildCardWedge();
 					break;
 				case 5:
 					if ($doublePlayed) break;
 					$doublePlayed = true;
-					$wheel->spaces[$i] = fortuneSpace::createSpecialWedge("doublePlay");
+					$wheel->spaces[$i] = new fortuneDoublePlayWedge();
 					break;
 				case 7:
-					$wheel->spaces[$i] = fortuneSpace::createSpecialWedge("freePlay");
+					$wheel->spaces[$i] =  new fortuneFreePlayWedge();
 					break;
 				case -9:
-					$wheel->spaces[$i] = fortuneSpace::createSpecialWedge("loseATurn");
+					$wheel->spaces[$i] = new fortuneLoseTurnWedge();
 					break;
 			}
 		}
@@ -90,9 +90,9 @@ class fortuneLayout_randomized extends fortuneSettings {
 		for ($i = 100; $i < 2400; $i += 100) {
 			$coverUp = 0;
 			if (isset($wheel->spaces[$i])) {
-				if ($wheel->spaces[$i]->type == 'doublePlay'
-				|| $wheel->spaces[$i]->type == 'wildCard'
-				|| $wheel->spaces[$i]->type == 'prize')
+				if ($wheel->spaces[$i] instanceof fortuneDoublePlayWedge
+				|| $wheel->spaces[$i] instanceof fortuneWildCardWedge
+				|| $wheel->spaces[$i] instanceof fortunePrizeWedge)
 					$coverUp = 1;
 				else
 					continue;
@@ -114,10 +114,9 @@ class fortuneLayout_randomized extends fortuneSettings {
 			$priceB *= 25;
 			$price = min($priceA, $priceB);
 
-			$wheel->spaces[$i+$coverUp] = fortuneSpace::createMoneyWedge($price, $color, $bgcolor);
-			if ($coverUp) {
+			$wheel->spaces[$i+$coverUp] = new fortuneCashWedge($price, $color, $bgcolor);
+			if ($coverUp)
 				$wheel->spaces[$i+$coverUp]->toggleEnabled();
-			}
 		}
 
 //		foreach ($wheel->spaces as $k=>$tmps)
@@ -152,6 +151,6 @@ class fortuneLayout_randomized extends fortuneSettings {
 	}
 
 	public function getBonusRoundText(&$player) {
-		return 'bonusstart';
+		return 'bonus';
 	}
 }

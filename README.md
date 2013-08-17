@@ -11,6 +11,7 @@ Setup:
 * Create a `[Fortune]` subheader in the configuration file for this module's configuration.
 
 Options:
-* `freewheellayout`: What layout to use for the "free" wheel; i.e. the one used for spins when no game is running. 
+* `freewheellayout`: What layout to use for the "free" wheel; i.e. the one used for spins when no game is running.  Since 8/17/13 this is also treated as the 'default' layout for games of Fortune.
 * `freewheelround`: What round the "free" wheel will be based off of.
 * `superops`: An array of nicknames that will always be allowed to manage the bot regardless of channel operator status.
+* `ignore`: An array of channels that will be completely ignored by Fortune.

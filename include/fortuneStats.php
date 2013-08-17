@@ -8,7 +8,7 @@
  * Statistic keeping classes.
  */
 
-class fortuneContestantData {
+final class fortuneContestantData {
 	public $name       = '';
 	public $lastplay   = 0;
 
@@ -27,7 +27,7 @@ class fortuneContestantData {
 	// serialize/unserialize for saving and loading
 }
 
-class fortuneStats {
+final class fortuneGameData {
 	public $bestgame     =  0;
 	public $bestgamename = 'nobody';
 
@@ -46,4 +46,9 @@ class fortuneStats {
 	public $lastwinner = array();
 
 	// serialize/unserialize for saving and loading
+}
+
+final class fortuneStats {
+	public $gamedata;
+	public $ctsdata;
 }

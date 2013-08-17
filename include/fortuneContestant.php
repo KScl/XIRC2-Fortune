@@ -8,7 +8,7 @@
  * Management for a contestant's data.
  */
 
-class fortuneContestant {
+final class fortuneContestant {
 	public $name = ""; // Their name!
 
 	public $onhand     = 0; // on account for this round
@@ -87,7 +87,6 @@ class fortuneContestant {
 		if ($this->lives)
 			$text .= " ".c(8,3).b()." {$this->lives}".c(0,3)." turn".(($this->lives>1)?"s":"")." ".r();
 
-
 		return $text;
 	}
 
@@ -109,13 +108,14 @@ class fortuneContestant {
 			case 2: $text = "Up third is "; break;
 			case 3: $text = "And at the end of the line is "; break;
 		}
-		// TODO handle this per channel
+
 		if ($lastWinnerHere) $text .= "our defending champion, ";
 		$text .= $this->name;
 
 		$money = number_format($this->ctsdata->money);
-		if ($this->ctsdata->games > 0) $text .= "; who returns with \${$money} to their name, amassed over {$this->ctsdata->games} game" .(($this->ctsdata->games > 1)?"s":""). ".";
-		else                           $text .= "; who is a complete newcomer to our game.  Nevertheless, welcome!";
+		$ngames = $this->ctsdata->games + $this->ctsdata->sologames;
+		if ($ngames > 0)	$text .= "; who returns with \${$money} to their name, amassed over {$ngames} game" .(($ngames > 1)?"s":""). ".";
+		else				$text .= "; who is a complete newcomer to our game.  Nevertheless, welcome!";
 
 		return $text;
 	}
@@ -129,7 +129,7 @@ class fortuneContestant {
 }
 
 // Those little things you pick up.
-class fortuneCard {
+final class fortuneCard {
 	public $type             = "prize";
 	public $survivesBankrupt = false; // Lost when bankrupted?
 	public $value            = 0;
@@ -150,7 +150,7 @@ class fortuneCard {
 }
 
 // The game ending bonus prize
-class fortuneBonusPrize {
+final class fortuneBonusPrize {
 	public $display = " NO TEXT TO SEND ";
 	public $value   = 0;
 

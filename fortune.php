@@ -19,6 +19,7 @@ require_once (FORTUNE_INCLUDE_DIR."fortuneStats.php");
 require_once (FORTUNE_INCLUDE_DIR."fortunePuzzle.php");
 require_once (FORTUNE_INCLUDE_DIR."fortuneContestant.php");
 require_once (FORTUNE_INCLUDE_DIR."fortuneWheel.php");
+require_once (FORTUNE_INCLUDE_DIR."fortuneWedges.php");
 require_once (FORTUNE_INCLUDE_DIR."fortuneSettings.php");
 
 /*
@@ -31,12 +32,11 @@ class fortune implements XIRC_Module {
 	static $globallistsize = 1;
 
 	// Stats
-	static $s;
-	static $ctsdata;
+	static $stats;
 
 	// Data storage files
 	private static $puzzlefile;
-	private static $ctsdatafile;
+	private static $statsfile;
 
 	// Moderation
 	private static $superops;
@@ -72,42 +72,73 @@ class fortune implements XIRC_Module {
 
 	static public function loadContestantData($file = NULL) {
 		if ($file)
-			self::$ctsdatafile = $file;
+			self::$statsfile = $file;
 
 		//timekeeping
 		$time = microtime(true);
-		self::$ctsdata = array();
+		self::$stats = array();
 
-		$qt = file_get_contents(self::$ctsdatafile);
-		$qt = explode("\r\n",$qt);
-		if (count($qt) < 2) {
-			self::$s = new fortuneStats();
+		$qt = @file_get_contents(self::$statsfile);
+		if ($qt === false)
 			return;
-		}
 
+		$qt = explode("\r\n",$qt);
+		if (count($qt) < 2)
+			return;
+
+		/// ***TIME
 		array_shift($qt);
 
-		$ctsdata = explode("\t", array_shift($qt));
-		self::$s = unserialize($ctsdata[1]);
+		$curlayout = 'regular';
 
 		foreach ($qt as $s) {
 			if ($s == "")
 				break;
-			$ctsdata = explode("\t", $s);
-			self::$ctsdata[$ctsdata[0]] = unserialize($ctsdata[1]);
+
+			$savedata = explode("\t", $s);
+
+			if ($savedata[0] === '***LAYOUT')
+				$curlayout = $savedata[1];
+			elseif ($savedata[0] === '***GAMEDATA')
+				self::$stats[$curlayout]->gamedata = unserialize($savedata[1]);
+			else
+				self::$stats[$curlayout]->ctsdata[$savedata[0]] = unserialize($savedata[1]);
 		}
 
 		$timetaken = sprintf("%1.7f",microtime(true)-$time);
-		console(count(self::$ctsdata) ." contestants' data loaded in $timetaken seconds.");
+		console("Stats loaded in {$timetaken} seconds.");
 	}
 
 	static public function saveContestantData() {
-		$ln = array("TIME\t".date('r'));
-		$ln[] = "DATA\t".serialize(self::$s);
+		$ln = array("***TIME\t".date('r'));
 
-		foreach (self::$ctsdata as $k=>$d)
-			$ln[] = "{$k}\t".serialize($d);
-		file_put_contents(self::$ctsdatafile, implode("\r\n", $ln));
+		foreach (self::$stats as $k=>$d) {
+			$ln[] = "***LAYOUT\t".$k;
+			$ln[] = "***GAMEDATA\t".serialize($d->gamedata);
+
+			foreach ($d->ctsdata as $ck=>$cd) {
+				if ($cd->lastplay == 0) // never actually played, don't save
+					unset($d->ctsdata[$ck]);
+				else
+					$ln[] = "{$ck}\t".serialize($cd);
+			}
+		}
+		file_put_contents(self::$statsfile, implode("\r\n", $ln));
+	}
+
+	static public function getLayoutStats($layout) {
+		$layout = strtolower($layout);
+		if (!isset(self::$stats[$layout])) {
+			self::$stats[$layout] = new fortuneStats();
+			self::$stats[$layout]->gamedata = new fortuneGameData();
+			self::$stats[$layout]->ctsdata = array();
+		}
+		return self::$stats[$layout];
+	}
+
+	static public function layoutStatsExist($layout) {
+		$layout = strtolower($layout);
+		return isset(self::$stats[$layout]);
 	}
 	//
 	// End static section
@@ -123,22 +154,26 @@ class fortune implements XIRC_Module {
 	// Test wheel that anyone can use when games aren't running
 	private $freewheel = NULL;
 
+	private $defaultlayout;
+
 	// Channels to IGNORE.
-	// A future version of the config will let you set this.
 	private $exclude = array();
 
 	private function setupFreeWheel() {
-		$layout = config::read('Fortune', 'freewheellayout');
+		$layout = $this->defaultlayout;
 		$round = config::read('Fortune', 'freewheelround');
 
+		$olderp = error_reporting(E_ERROR|E_PARSE);
 		$r = include_once (FORTUNE_LAYOUT_DIR."{$layout}.php");
+		error_reporting($olderp);
+
 		if ($r === FALSE) // bad.
-			die(consoleError("Game layout file \"{$layout}\" (used for free wheel) doesn't seem to exist."));
+			die(consoleError("Game layout file \"{$layout}\" (default, used for free wheel) doesn't seem to exist."));
 
 		$this->freewheel = new fortuneWheel();
 
 		$layoutClass = 'fortuneLayout_'.$layout;
-		$game = new $layoutClass;
+		$game = new $layoutClass($layout);
 
 		for ($i = 1; $i <= $round; ++$i)
 			$game->setupWheel($this->freewheel, $i);
@@ -157,11 +192,9 @@ class fortune implements XIRC_Module {
 		//irc::message($data->channel, $this->freewheel->displayWheelTip($msg, $placeholder, $wedge->shorttext));
 		//irc::message($data->channel, $this->freewheel->displayWheel());
 
-		$extratext = '';
-		if ($wedge->type == 'mystery') {
-			if ($wedge->vars == 1) $extratext = ' ($10,000)';
-			else                   $extratext = ' (BANKRUPT)';
-		}
+		$extratext = $wedge->getExtraText();
+		if ($extratext !== '')
+			$extratext = ' '.$extratext;
 
 		$msg = sprintf("%s spins %s%s.", $data->nick, $wedge->shorttext, $extratext);
 		irc::message($data->channel, $msg);
@@ -172,11 +205,13 @@ class fortune implements XIRC_Module {
 	*/
 
 	public function __construct() {
+		$this->defaultlayout = config::read('Fortune', 'freewheellayout');
 		$this->setupFreeWheel();
+
 		$this->exclude = config::read('Fortune', 'ignore', array());
+
 		self::$superops = config::read('Fortune', 'superops', array());
 
-		self::$s = new fortuneStats();
 		self::loadPuzzles(FORTUNE_DATA_DIR."puzzles.txt");
 		self::loadContestantData(FORTUNE_DATA_DIR."contestants.txt");
 	}
@@ -292,16 +327,19 @@ class fortune implements XIRC_Module {
 			$t = explode(DIRECTORY_SEPARATOR, $options['layout']);
 			$options['layout'] = array_pop($t);
 
-			// Don't @ this.
-			// Parse errors suck to debug with that added.
+			// Don't @ this. Parse errors suck to debug with that added.
+			// Use error_reporting instead.
+			$olderp = error_reporting(E_ERROR|E_PARSE);
 			$r = include_once (FORTUNE_LAYOUT_DIR."{$options[layout]}.php");
+			error_reporting($olderp);
+
 			if ($r === FALSE) { // bad.
 				irc::notice($data->nick, "Game layout file \"{$options[layout]}\" doesn't seem to exist.");
 				return true;
 			}
 
 			$layoutClass = 'fortuneLayout_'.$options['layout'];
-			$game = new $layoutClass;
+			$game = new $layoutClass($options['layout']);
 			$game->channel = $data->channel;
 			$this->setGame($data->channel, $game);
 
@@ -426,8 +464,19 @@ class fortune implements XIRC_Module {
 		else
 			$nick = $data->messageex[1];
 
-		if (!($pdata = self::$ctsdata[strtolower($nick)])) {
-			irc::message($data->channel, "{$nick} either doesn't exist or hasn't played our game yet.");
+		if ($data->messageex[2])
+			$layoutname = $data->messageex[2];
+		else
+			$layoutname = $this->defaultlayout;
+
+		if (!self::layoutStatsExist($layoutname)) {
+			irc::message($data->channel, "No layout with the name '{$layoutname}' exists.");
+			return true;
+		}
+		$stats = self::getLayoutStats($layoutname);
+
+		if (!($pdata = $stats->ctsdata[strtolower($nick)])) {
+			irc::message($data->channel, "{$nick} either doesn't exist or hasn't played on that layout yet.");
 			return true;
 		}
 
@@ -441,7 +490,7 @@ class fortune implements XIRC_Module {
 		$place = 1;
 		$money = number_format($pdata->money);
 
-		foreach (self::$ctsdata as $ct)
+		foreach ($stats->ctsdata as $ct)
 			if ($ct->money > $pdata->money)
 				++$place;
 
@@ -451,7 +500,7 @@ class fortune implements XIRC_Module {
 		$place = 1;
 		$money = number_format($pdata->bestgame);
 
-		foreach (self::$ctsdata as $ct)
+		foreach ($stats->ctsdata as $ct)
 			if ($ct->bestgame > $pdata->bestgame)
 				++$place;
 
@@ -459,9 +508,9 @@ class fortune implements XIRC_Module {
 		irc::message($data->channel, "{$nick} is ".b()."{$ord}".b()." in best single-game winnings with ".b()."\${$money}".b().".");
 
 		$place = 1;
-		$money = number_format($pdata->mostsolo);
+		$money = number_format($pdata->bestsolo);
 
-		foreach (self::$ctsdata as $ct)
+		foreach ($stats->ctsdata as $ct)
 			if ($ct->bestsolo > $pdata->bestsolo)
 				++$place;
 
@@ -471,30 +520,87 @@ class fortune implements XIRC_Module {
 	}
 
 	public function showGameData(&$data) {
-		$money = b().'$'.number_format(self::$s->totalcash).r();
-		$games = b().self::$s->games.r();
+		if ($data->messageex[1])
+			$layoutname = $data->messageex[1];
+		else
+			$layoutname = $this->defaultlayout;
+
+		$totalcash = 0;
+		$numgames = 0;
+
+		$bestgame = array(0, '');
+		$bestwin  = array(0, '');
+		$bestloss = array(0, '');
+		$bestsolo = array(0, '');
+
+		if (!strcasecmp($layoutname, 'all')) {
+			foreach(self::$stats as $k=>$s) {
+				$stats = &$s->gamedata;
+
+				$totalcash += $stats->totalcash;
+				$numgames += $stats->games;
+
+				if ($bestgame[0] < $stats->bestgame)
+					$bestgame = array($stats->bestgame, "{$stats->bestgamename} [{$k}]");
+				if ($bestwin [0] < $stats->bestwin )
+					$bestwin  = array($stats->bestwin , "{$stats->bestwinname} [{$k}]");
+				if ($bestloss[0] < $stats->bestloss)
+					$bestloss = array($stats->bestloss, "{$stats->bestlossname} [{$k}]");
+				if ($bestsolo[0] < $stats->bestsolo)
+					$bestsolo = array($stats->bestsolo, "{$stats->bestsoloname} [{$k}]");
+			}
+		}
+		elseif (!self::layoutStatsExist($layoutname)) {
+			irc::message($data->channel, "No layout with the name '{$layoutname}' exists.");
+			return true;
+		}
+		else {
+			$stats = &self::getLayoutStats($layoutname)->gamedata;
+
+			$totalcash = $stats->totalcash;
+			$numgames = $stats->games;
+
+			$bestgame = array($stats->bestgame, $stats->bestgamename);
+			$bestwin  = array($stats->bestwin , $stats->bestwinname);
+			$bestloss = array($stats->bestloss, $stats->bestlossname);
+			$bestsolo = array($stats->bestsolo, $stats->bestsoloname);
+		}
+
+		$money = b().'$'.number_format($totalcash).r();
+		$games = b().$numgames.r();
 		irc::message($data->channel, "To date, Fortuna has given out {$money} in fake e-cash over {$games} games.");
 
-		$money = b().'$'.number_format(self::$s->bestgame).r();
-		$name = b().self::$s->bestgamename.r();
+		$money = b().'$'.number_format($bestgame[0]).r();
+		$name = b().$bestgame[1].r();
 		irc::message($data->channel, "The best single-game score is {$money}, held by {$name}.");
 
-		$money = b().'$'.number_format(self::$s->bestwin).r();
-		$name = b().self::$s->bestwinname.r();
+		$money = b().'$'.number_format($bestwin[0]).r();
+		$name = b().$bestwin[1].r();
 		irc::message($data->channel, "The best single-game score before the bonus round is {$money}, held by {$name}.");
 
-		$money = b().'$'.number_format(self::$s->bestloss).r();
-		$name = b().self::$s->bestlossname.r();
+		$money = b().'$'.number_format($bestloss[0]).r();
+		$name = b().$bestloss[1].r();
 		irc::message($data->channel, "The best single-game score that didn't win a game is {$money}, held by {$name}.");
 
-		$money = b().'$'.number_format(self::$s->bestsolo).r();
-		$name = b().self::$s->bestsoloname.r();
+		$money = b().'$'.number_format($bestsolo[0]).r();
+		$name = b().$bestsolo[1].r();
 		irc::message($data->channel, "The best solo single-game score is {$money}, held by {$name}.");
 
 		return true;
 	}
 
 	public function showTop(&$data) {
+		if ($data->messageex[2])
+			$layoutname = $data->messageex[2];
+		else
+			$layoutname = $this->defaultlayout;
+
+		if (!self::layoutStatsExist($layoutname)) {
+			irc::message($data->channel, "No layout with the name '{$layoutname}' exists.");
+			return true;
+		}
+		$stats = self::getLayoutStats($layoutname);
+
 		$format = '$%s';
 		switch ($data->messageex[1]) {
 			case 'total':
@@ -543,7 +649,7 @@ class fortune implements XIRC_Module {
 		}
 
 		$players = array();
-		foreach (self::$ctsdata as $ct) {
+		foreach ($stats->ctsdata as &$ct) {
 			$players[$ct->name] = $ct->$var;
 		}
 		arsort($players);
