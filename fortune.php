@@ -145,7 +145,6 @@ class fortune implements XIRC_Module {
 	//
 
 
-
 	// fortuneSettings class objects that determines how the game flows
 	// [channel] => [object]
 	// Flawlessly supports multiple games in multiple channels
@@ -298,7 +297,7 @@ class fortune implements XIRC_Module {
 		array_shift($data->messageex);
 
 		if (($game = $this->getGame($data->channel)) == NULL) { // starting a new game
-			$options = array("layout"=>"regular");
+			$options = array("layout" => $this->defaultlayout);
 			$needsparam = array("layout","rounds","time","players","minimum","lives");
 
 			while (count($data->messageex) > 0) {
@@ -315,6 +314,8 @@ class fortune implements XIRC_Module {
 					$options[$elem] = true;
 			}
 
+			// Todo: Make this less hacky. Add a layout function to check settings
+			// (some might end at a set number of rounds no matter what, and ignore time and rounds settings)
 			if (!$options['solo'] && isset($options['rounds']) && isset($options['time'])
 			 && (int)$options['rounds'] <= 0 && (int)$options['time'] <= 0) {
 				irc::notice($data->nick, "Can't disable both rounds and time limits because the game would never end!");
@@ -647,9 +648,8 @@ class fortune implements XIRC_Module {
 		}
 
 		$players = array();
-		foreach ($stats->ctsdata as &$ct) {
+		foreach ($stats->ctsdata as &$ct)
 			$players[$ct->name] = $ct->$var;
-		}
 		arsort($players);
 
 		$i = 0;
