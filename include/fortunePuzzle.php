@@ -8,11 +8,11 @@
  * Management for puzzles.
  */
 
-define(P_TOSSUP,   1); // Tossup puzzles
-define(P_NORMAL,   2); // Regular rounds
-define(P_JACKPOT,  4); // Jackpot round (huger puzzles)
-define(P_BONUS,    8); // Bonus round (shorter puzzles)
-define(P_PRIZE,   16); // Prize puzzles
+define('P_TOSSUP',   1); // Tossup puzzles
+define('P_NORMAL',   2); // Regular rounds
+define('P_JACKPOT',  4); // Jackpot round (huger puzzles)
+define('P_BONUS',    8); // Bonus round (shorter puzzles)
+define('P_PRIZE',   16); // Prize puzzles
 
 final class fortunePuzzle {
 	public $category = "";

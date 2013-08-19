@@ -220,8 +220,6 @@ class fortune implements XIRC_Module {
 		//event
 		events::hook($myName, EVENT_CHANNEL_MESSAGE, 'onChat');
 		events::hook($myName, EVENT_MESSAGE,         'onQuery');
-
-		irc::join($this->include);
 	}
 
 	public function onMainLoop() {
