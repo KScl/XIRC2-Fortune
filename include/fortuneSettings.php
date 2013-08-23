@@ -1597,7 +1597,7 @@ abstract class fortuneSettings {
 
 		$text = "prebonus";
 		if ($this->playerlimit == 1) {
-			$text = "solobonus";
+			$text = "prebonus_solo";
 			$this->winner = 0;
 		}
 		elseif ($this->winner >= 0); // Winner is already defined
