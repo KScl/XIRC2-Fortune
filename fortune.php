@@ -152,12 +152,14 @@ class fortune implements XIRC_Module {
 
 	// Test wheel that anyone can use when games aren't running
 	private $freewheel = NULL;
-
 	private $defaultlayout;
 
 	// Channels to IGNORE.
 	private $exclude = array();
 
+	/*
+	 * Setup functions.
+	 */
 	private function setupFreeWheel() {
 		$layout = $this->defaultlayout;
 		$round = config::read('Fortune', 'freewheelround');
@@ -199,10 +201,29 @@ class fortune implements XIRC_Module {
 		irc::message($data->channel, $msg);
 	}
 
- /*
-	* Events.
-	*/
+	/*
+	 * Get information from game states.
+	 */
+	public function isRunning($chan) {
+		$chan = strtolower($chan);
+		return (isset($this->gamesettings[$chan]));
+	}
 
+	public function getGame($chan) {
+		$chan = strtolower($chan);
+		if (isset($this->gamesettings[$chan]))
+			return $this->gamesettings[$chan];
+		return NULL;
+	}
+
+	private function setGame($chan, &$game) {
+		$chan = strtolower($chan);
+		$this->gamesettings[$chan] = $game;
+	}
+
+	/*
+	 * Events.
+	 */
 	public function __construct() {
 		$this->defaultlayout = config::read('Fortune', 'freewheellayout');
 		$this->setupFreeWheel();
@@ -265,34 +286,58 @@ class fortune implements XIRC_Module {
 			$this->$func($data);
 	}
 
-	// Returns if a game is going.
-	public function isRunning($chan) {
-		$chan = strtolower($chan);
-		return (isset($this->gamesettings[$chan]));
+	/*
+	 * Administrative fun stuff
+	 */
+	public function reloadPuzzles(&$data) {
+		consoleWarn("{$data->nick} tried to reload puzzles");
+		if (!in_array($data->nick, self::$superops)) return; //get outta here!
+
+		self::loadPuzzles();
+		irc::message($data->nick, "Puzzles reloaded from ".fortune::$puzzlefile.". (".count(fortune::$puzzles)." puzzles)");
 	}
 
-	public function getGame($chan) {
-		$chan = strtolower($chan);
-		if (isset($this->gamesettings[$chan]))
-			return $this->gamesettings[$chan];
-		return NULL;
+	public function showRunning(&$data) {
+		consoleWarn("{$data->nick} tried to show running games");
+		if (!in_array($data->nick, self::$superops)) return; //get outta here!
+
+		if (count($this->gamesettings) < 1) {
+			irc::message($data->nick, "No games running.");
+			return;
+		}
+		foreach($this->gamesettings as $s)
+			irc::message($data->nick, "{$s->channel}: ".$s->whatAmIDoing());
 	}
 
-	public function setGame($chan, &$game) {
-		$chan = strtolower($chan);
-		$this->gamesettings[$chan] = $game;
-	}
+	public function skipAction(&$data) {
+		consoleWarn("{$data->channel}: {$data->nick} tried to skip an action");
+		if (!in_array($data->nick, self::$superops) && !irc::hasOp($data->channel,$data->nick))
+			return false; //get outta here!
 
- /*
-	* UNORGANIZED STUFF
-	*/
-	public function freeSpin(&$data) {
-		// no free spins while running
-		if ($this->isRunning($data->channel)) return false;
-		$this->spinFreeWheel($data);
+		$game = $this->getGame($data->channel);
+		if (!$game) return true;
+
+		$game->message("Skipping this section of the game and advancing on.");
+		$game->doAction();
 		return true;
 	}
 
+	public function endWOF(&$data) {
+		consoleWarn("{$data->channel}: {$data->nick} tried to end game");
+		if (!in_array($data->nick, self::$superops) && !irc::hasOp($data->channel,$data->nick))
+			return false; //get outta here!
+
+		$game = $this->getGame($data->channel);
+		if (!$game) return true;
+
+		$game->candie = true;
+		$game->message(b().$data->nick.r()." ended the game.");
+		return true;
+	}
+
+	/*
+	 * Commands directly handling games of Fortune
+	 */
 	public function startWOF(&$data) {
 		array_shift($data->messageex);
 
@@ -314,14 +359,6 @@ class fortune implements XIRC_Module {
 					$options[$elem] = true;
 			}
 
-			// Todo: Make this less hacky. Add a layout function to check settings
-			// (some might end at a set number of rounds no matter what, and ignore time and rounds settings)
-			if (!$options['solo'] && isset($options['rounds']) && isset($options['time'])
-			 && (int)$options['rounds'] <= 0 && (int)$options['time'] <= 0) {
-				irc::notice($data->nick, "Can't disable both rounds and time limits because the game would never end!");
-				return true;
-			}
-
 			// This stops people fucking things up (../../../lol)
 			$t = explode(DIRECTORY_SEPARATOR, $options['layout']);
 			$options['layout'] = array_pop($t);
@@ -339,59 +376,68 @@ class fortune implements XIRC_Module {
 
 			$layoutClass = 'fortuneLayout_'.$options['layout'];
 			$game = new $layoutClass($options['layout']);
-			$game->channel = $data->channel;
-			$this->setGame($data->channel, $game);
 
+			$msgs = array();
 			foreach($options as $elem=>$var) {
-				$msg = "";
 				switch ($elem) {
-					case "rounds":
-						$var = min((int)$var, 20);
-						$game->roundsuntilbell = $var;
-						$game->nostats = true;
-						$msg = (($var > 0) ? "Speedup will occur after ".getTextNumeral($var)." rounds." : "Round limit disabled.");
-						break;
-					case "time":
-						$var = min((int)$var, 3600);
-						$game->timeuntilbell = $var;
-						$game->nostats = true;
-						$msg = (($var > 0) ? "Speedup will occur after ".getTextTime($var)."." : "Time limit disabled.");
-						break;
-					case "minimum":
-						$var = min((int)$var, 10000);
-						$game->houseminimum = $var;
-						$game->nostats = true;
-						$msg = (($var > 0) ? "Minimum round winnings set to \$".number_format($game->houseminimum)."." : "Minimum round winnings disabled.");
-						break;
 					case "debug":
 						$game->debugger = DEBUG_ON;
 						$game->nostats = true;
-						$msg = "Put your hard hats on!  Debugging in progress.";
+						$msgs['d'] = "Put your hard hats on!  Debugging in progress.";
 						break;
 					case "multidebug":
 						$game->debugger = DEBUG_MULTI;
 						$game->nostats = true;
-						$msg = "Everyone get out your hard hats!  Channel wide debugging initiated.";
+						$msgs['d'] = "Everyone get out your hard hats!  Channel wide debugging initiated.";
 						break;
+
 					case "players":
 						$game->playerlimit = min(max((int)$var, 2),6);
 						break;
 					case "solo":
 						$game->playerlimit = 1;
-						$game->timeuntilbell = -1; // Disallow stalling
+						break;
+
+					case "rounds":
+						$var = min((int)$var, 20);
+						$game->roundsuntilbell = $var;
+						$game->nostats = true;
+						$msgs['r'] = (($var > 0) ? "Speedup will occur after ".getTextNumeral($var)." rounds." : "Round limit disabled.");
+						break;
+					case "time":
+						$var = min((int)$var, 3600);
+						$game->timeuntilbell = $var;
+						$game->nostats = true;
+						$msgs['t'] = (($var > 0) ? "Speedup will occur after ".getTextTime($var)."." : "Time limit disabled.");
+						break;
+					case "minimum":
+						$var = min((int)$var, 10000);
+						$game->houseminimum = $var;
+						$game->nostats = true;
+						$msgs['m'] = (($var > 0) ? "Minimum round winnings set to \$".number_format($game->houseminimum)."." : "Minimum round winnings disabled.");
 						break;
 					case "lives":
 						$game->sololives = min(max((int)$var, 2),19);
 						$game->nostats = true;
 						break;
+
 					case "wheel":
-						$msg = 'Displaying the full wheel after every spin.  Now you can see exactly how close you are to bankruptcy...';
+						$msgs['w'] = 'Displaying the full wheel after every spin.  Now you can see exactly how close you are to bankruptcy...';
 						$game->showwheel = true;
 						break;
 				}
-				if ($msg)
-					$game->message($msg);
 			}
+
+			if (($errormsg = $game->checkOptionValidity()) !== true) {
+				irc::notice($data->nick, $errormsg);
+				unset($game);
+				return true;
+			}
+
+			$game->channel = $data->channel;
+			$this->setGame($data->channel, $game);
+			foreach($msgs as $msg)
+				$game->message($msg);
 			if ($game->nostats)
 				$game->message(b()."WARNING: ".b()."Custom settings used.  Statistics are disabled for this game!");
 		}
@@ -413,50 +459,9 @@ class fortune implements XIRC_Module {
 		return true;
 	}
 
-	public function endWOF(&$data) {
-		consoleWarn("{$data->channel}: {$data->nick} tried to end game");
-		if (!in_array($data->nick, self::$superops) && !irc::hasOp($data->channel,$data->nick)) return false; //get outta here!
-
-		$game = $this->getGame($data->channel);
-		if (!$game) return true;
-
-		$game->candie = true;
-		$game->message(b().$data->nick.r()." ended the game.");
-		return true;
-	}
-
-	public function skipAction(&$data) {
-		consoleWarn("{$data->channel}: {$data->nick} tried to skip an action");
-		if (!in_array($data->nick, self::$superops) && !irc::hasOp($data->channel,$data->nick)) return false; //get outta here!
-
-		$game = $this->getGame($data->channel);
-		if (!$game) return true;
-
-		$game->message("Skipping this section of the game and advancing on.");
-		$game->doAction();
-		return true;
-	}
-
-	public function reloadPuzzles(&$data) {
-		consoleWarn("{$data->nick} tried to reload puzzles");
-		if (!in_array($data->nick, self::$superops)) return; //get outta here!
-
-		self::loadPuzzles();
-		irc::message($data->nick, "Puzzles reloaded from ".fortune::$puzzlefile.". (".count(fortune::$puzzles)." puzzles)");
-	}
-
-	public function showRunning(&$data) {
-		consoleWarn("{$data->nick} tried to show running games");
-		if (!in_array($data->nick, self::$superops)) return; //get outta here!
-
-		if (count($this->gamesettings) < 1) {
-			irc::message($data->nick, "No games running.");
-			return;
-		}
-		foreach($this->gamesettings as $s)
-			irc::message($data->nick, "{$s->channel}: ".$s->whatAmIDoing());
-	}
-
+	/*
+	 * Statskeeping commands, et cetera
+	 */
 	public function showPlayerData(&$data) {
 		if (!$data->messageex[1])
 			$nick = $data->nick;
@@ -662,4 +667,11 @@ class fortune implements XIRC_Module {
 		}
 		return true;
 	}
+
+	public function freeSpin(&$data) {
+		// no free spins while running
+		if ($this->isRunning($data->channel)) return false;
+		$this->spinFreeWheel($data);
+		return true;
+	}	
 }

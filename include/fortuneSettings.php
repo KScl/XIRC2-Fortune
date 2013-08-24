@@ -1959,6 +1959,17 @@ abstract class fortuneSettings {
 	// END ENDGAME FUNCTIONS
 	//
 
+	//
+	// MODIFIABLE FUNCTIONS
+	//
+	public function checkOptionValidity() {
+		if ($this->playerlimit < 2)
+			$this->timeuntilbell = -1; // Disallow stalling
+		elseif ($this->timeuntilbell <= 0 && $this->roundsuntilbell <= 0)
+			return 'Can\'t disable both rounds and time limits because the game would never end!';
+		return true;
+	}
+
 	protected abstract function setupMessages();
 	protected abstract function act($n);
 	public abstract function setupWheel(&$wheel, $round);
