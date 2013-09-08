@@ -156,6 +156,7 @@ class fortune implements XIRC_Module {
 
 	// Channels to IGNORE.
 	private $exclude = array();
+	private $tempexclude = array();
 
 	/*
 	 * Setup functions.
@@ -252,7 +253,17 @@ class fortune implements XIRC_Module {
 	}
 
 	public function onChat(&$data) {
-		if (in_array($data->channel, $this->exclude)) return;
+		if (in_array($data->channel, $this->exclude))
+			return;
+
+		$cmdtext = $data->messageex[0];
+
+		if (in_array($data->channel, $this->tempexclude)) {
+			if ($cmdtext == '!enable')
+				$this->unExcludeChannel($data);
+			return; // always
+		}
+
 		$functionCalls = array(
 			'!fortune' => 'startWOF',
 			'!leave'   => 'leaveWOF',
@@ -264,8 +275,9 @@ class fortune implements XIRC_Module {
 			//Op only
 			'!endgame' => 'endWOF',
 			'!skip'    => 'skipAction',
+			'!disable' => 'tempExcludeChannel',
 		);
-		if ($func = $functionCalls[$data->messageex[0]]) {
+		if ($func = $functionCalls[$cmdtext]) {
 			if ($this->$func($data))
 				return;
 		}
@@ -332,6 +344,36 @@ class fortune implements XIRC_Module {
 
 		$game->candie = true;
 		$game->message(b().$data->nick.r()." ended the game.");
+		return true;
+	}
+
+	public function tempExcludeChannel(&$data) {
+		consoleWarn("{$data->channel}: {$data->nick} tried to disable channel commands");
+		if (!in_array($data->nick, self::$superops) && !irc::hasOp($data->channel,$data->nick))
+			return false; //get outta here!
+
+		if ($this->isRunning($data->channel))
+			return false;
+
+		if (!in_array($data->channel, $this->tempexclude)) {
+			$this->tempexclude[] = $data->channel;
+			irc::message($data->channel, "Fortune commands in this channel have been temporarily suspended.");
+		}
+		return true;
+	}
+
+	public function unExcludeChannel(&$data) {
+		consoleWarn("{$data->channel}: {$data->nick} tried to re-enable channel commands");
+		if (!in_array($data->nick, self::$superops) && !irc::hasOp($data->channel,$data->nick))
+			return false; //get outta here!
+
+		if ($this->isRunning($data->channel))
+			return false;
+
+		if (($key = array_search($data->channel, $this->tempexclude)) !== false) {
+			unset($this->tempexclude[$key]);
+			irc::message($data->channel, "Fortune commands in this channel have been re-enabled.");
+		}
 		return true;
 	}
 
@@ -673,5 +715,5 @@ class fortune implements XIRC_Module {
 		if ($this->isRunning($data->channel)) return false;
 		$this->spinFreeWheel($data);
 		return true;
-	}	
+	}
 }
