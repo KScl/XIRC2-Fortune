@@ -1839,7 +1839,7 @@ abstract class fortuneSettings {
 	final private function bonus_Correct(&$data, $id, &$player) {
 		consoleDebug("{$this->channel}: Bonus round has ended.");
 
-		$this->messageOutput('correct', b().$this->puzzle->solved.r());
+		$this->messageOutput('solve_correct', b().$this->puzzle->solved.r());
 		$this->messageOutput('bonus_win', $this->bonusprize->display);
 		$player->finalscore += $this->bonusprize->value;
 
@@ -1949,7 +1949,7 @@ abstract class fortuneSettings {
 			$stt->totalcash += $c->finalscore;
 
 			$ctsdata->lastplay = time();
-			$ctsdata->money += $c->banked;
+			$ctsdata->money += $c->finalscore;
 			unset($ctsdata);
 		}
 		++$stt->games;
