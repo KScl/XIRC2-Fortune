@@ -496,7 +496,8 @@ abstract class fortuneSettings {
 	//
 	final public function wedgeTimeUp() {
 		$wedge = $this->wheel->getLandedWedge();
-		$wedge->handleTimeUp();
+		$player = &$this->contestants[$this->turn];
+		$wedge->handleTimeUp($this, $player);
 	}
 
 	final public function wedgeEndHandling($continueTurn = true) {
