@@ -53,7 +53,7 @@ class fortune implements XIRC_Module {
 		self::$puzzles = array();
 
 		$qt = file_get_contents(self::$puzzlefile);
-		$qt = explode("\r\n",$qt);
+		$qt = explode("\n",$qt);
 
 		foreach($qt as $k=>$s) {
 			$s = trim($s);
